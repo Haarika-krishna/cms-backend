@@ -1,53 +1,61 @@
-// middlewares/auth.js
 const jwt = require('jsonwebtoken');
-const Customer = require('../models/Customer');
+const Customer = require('../models/customer');
 
+// Protect routes - customer must be authenticated
 exports.protect = async (req, res, next) => {
   try {
+    // 1. Get token from header
     let token;
-
-    // 1) Authorization header (Bearer ...)
-    if (req.headers.authorization && req.headers.authorization.split(' ')[0].toLowerCase() === 'bearer') {
+    if (
+      req.headers.authorization &&
+      req.headers.authorization.startsWith('Bearer')
+    ) {
       token = req.headers.authorization.split(' ')[1];
     }
 
-    // 2) Cookie (if you use cookie auth) - optional
-    if (!token && req.cookies && req.cookies.token) {
-      token = req.cookies.token;
-    }
-
     if (!token) {
-      return res.status(401).json({ status: 'fail', message: 'You are not logged in.' });
+      return res.status(401).json({
+        status: 'fail',
+        message: 'You are not logged in. Please log in to get access.'
+      });
     }
 
-    if (!process.env.JWT_SECRET) {
-      console.warn('JWT_SECRET not set - protect will still try to verify with fallback secret');
-    }
+    // 2. Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret');
-
-    const currentCustomer = await Customer.findById(decoded.id).select('+password');
+    // 3. Check if customer still exists
+    const currentCustomer = await Customer.findById(decoded.id);
     if (!currentCustomer) {
-      return res.status(401).json({ status: 'fail', message: 'User no longer exists.' });
+      return res.status(401).json({
+        status: 'fail',
+        message: 'The customer belonging to this token no longer exists.'
+      });
     }
 
-    // Check if user changed password after token was issued
-    if (currentCustomer.changedPasswordAfter && currentCustomer.changedPasswordAfter(decoded.iat)) {
-      return res.status(401).json({ status: 'fail', message: 'User recently changed password. Please log in again.' });
+    // 4. Check if customer changed password after token was issued
+    if (currentCustomer.changedPasswordAfter(decoded.iat)) {
+      return res.status(401).json({
+        status: 'fail',
+        message: 'Customer recently changed password. Please log in again.'
+      });
     }
 
-    // attach safe user object (without password)
-    req.customer = {
-      id: currentCustomer._id,
-      name: currentCustomer.name,
-      email: currentCustomer.email
-    };
+    // Grant access to protected route
+    req.customer = currentCustomer;
     next();
   } catch (err) {
     console.error('Authentication error:', err);
+    
     let message = 'Invalid token. Please log in again.';
-    if (err.name === 'TokenExpiredError') message = 'Your token has expired. Please log in again.';
+    if (err.name === 'TokenExpiredError') {
+      message = 'Your token has expired. Please log in again.';
+    } else if (err.name === 'JsonWebTokenError') {
+      message = 'Invalid token. Please log in again.';
+    }
 
-    res.status(401).json({ status: 'fail', message });
+    res.status(401).json({
+      status: 'fail',
+      message
+    });
   }
 };
