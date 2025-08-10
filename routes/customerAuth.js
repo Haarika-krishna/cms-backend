@@ -3,8 +3,8 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
-const Customer = require('../models/customer');
-const { sendVerificationEmail } = require('../utils/emailService');
+const Customer = require('../models/Customer');
+const { sendVerificationEmail }= require('../utils/emailService');
 
 const router = express.Router();
 
